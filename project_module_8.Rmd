@@ -1,0 +1,146 @@
+PREDICTION ASSIGNMENT WRITEUP
+=============================
+
+# OVERVIEW 
+
+The goal of this report is to predict the manner in which 6 participants performed some exercises described in the Background section. This is the "classe" variable in the training set. I used the other variables to achieve the best prediction model according to the training test. After that, I applied the best prediction model to the test set.
+
+# BACKGROUND 
+
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement – a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website here: http://groupware.les.inf.puc-rio.br/har (see the section on the Weight Lifting Exercise Dataset).
+
+# DATA LOADING AND EXPLORATORY ANALYSIS
+
+First, we load the libraries and the training Dataset from the link. Aftewards, we clean the input data by eliminanting variables with a high amount of NA or missing data.
+
+```{r,cache=TRUE}
+#LOAD LIBRARIES
+library(ISLR)
+library(caret)
+library(e1071)
+library(RANN)
+library(corrplot)
+
+#Download and clean the datasets
+path_training<-"https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+training_data<-read.csv(path_training,na.strings=c("NA","","#DIV/0!"))
+
+#Delete columns wiht 90% values are missing values
+filter_variables<-sapply(training_data,function(x) mean(is.na(x)))>0.90
+training_data_2<-training_data[,filter_variables==FALSE]
+```
+
+Then, we removed variables with near zero variance predictors :
+
+```{r}
+# Check zero variance predictors and remove them
+nsv<-nearZeroVar(training_data_2,saveMetrics=TRUE)
+training_filter<-training_data_2[,nsv$nzv==FALSE]
+```
+Finally, I filter out the identification variables
+
+```{r}
+# Remove Identification variables
+training_filter_2<-training_filter[,-(1:6)]
+```
+
+After cleaning the number of variables for the analysis has been reduced from 160 to 53.
+
+## CORRELATION ANALYSIS
+
+```{r}
+CORRELATION<-cor(training_filter_2[,-53])
+corrplot(CORRELATION,order="FPC",method="color",type="lower",tl.cex=0.8,tl.col=rgb(0,0,0))
+
+corr<-abs(cor(training_filter_2[-53]))
+diag(corr)<-0
+which(corr>0.9,arr.ind=TRUE)
+```
+
+As can be seen, There are few variables correlated (>0.9 out of 1). I will filter out the correlated variables :
+
+* roll_belt correlated with total_accel_belt,accel_belt_y and accel_belt_z (1 -> 9,4,10)  
+* pitch_belt correlated with accel_belt_x ( 2 -> 8)  
+* gyros_arm_x correlated with gyros_arm_y ( 18 -> 19)
+* gyros_dumbbell_x correlated with gyros_dumbbell_z and gyroes_forearm_z (31 -> 33 and 46)
+
+```{r}
+training_filter_3<-training_filter_2[,-c(4,9,10,8,19,33,46)]
+```
+
+Finally, The number of variables is 46.
+
+# PREDICTION MODEL BUILDING
+
+First, I split the training Dataset into training set and testing set, 70%-30%
+
+```{r}
+# CREATE A PARTITION TRAINING DATASET 70% and TEST DATASET 30%
+inTrain<-createDataPartition(training_filter_3$classe,p=0.7,list=FALSE)
+training<-training_filter_3[inTrain,]
+testing<-training_filter_3[-inTrain,]
+```
+
+Then, I calculate three prediction models : BOOSTING, LINEAR DISCRIMINANT ANALYSIS AND RANDOM FOREST.
+
+mod_gbm<-train(classe ~ .,data=training,method="gbm")
+mod_lda<-train(classe ~ .,data=training,method="lda")
+mod_rf<-train(classe ~ .,data=training,method="rf")
+
+```{r,cache=TRUE,results=FALSE,message=FALSE, include=FALSE}
+# MODELS RANDOM FOREST, BOOSTING and LINEAR DISCRIMINANT ANALYSIS
+mod_gbm<-train(classe ~ .,data=training,method="gbm")
+mod_lda<-train(classe ~ .,data=training,method="lda")
+mod_rf<-train(classe ~ .,data=training,method="rf")
+```
+
+FINALLY, I WILL COMPARE THE DIFFERENT MODELS WITH THE TESTING SET
+```{r}
+# BOOSTING
+pred_gbm<-predict(mod_gbm,newdata=testing)
+confusionMatrix(pred_gbm,testing$classe)
+
+# LINEAR DISCRIMINANT ANALYSIS
+pred_lda<-predict(mod_lda,newdata=testing)
+confusionMatrix(pred_lda,testing$classe)
+
+# RANDOM FOREST
+pred_rf<-predict(mod_rf,newdata=testing)
+confusionMatrix(pred_rf,testing$classe)
+```
+
+The best prediction model is Random Forest with a accuracy of 99.44%  
+LDA Accuracy is about 68%  
+GBM Accuracy is about 96%  
+
+# APPLYING THE BEST MODEL TO THE TEST DATASET
+
+Giving the results from the PREDICTION MODEL BUILDING section. We are going to use Random Forest Model because it fits in quite well on the test dataset.
+
+First, I have to load the data
+
+```{r}
+#Download and clean the datasets
+path_test="https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+test_data<-read.csv(path_test)
+```
+
+Afterwards, I will clean the data as I did with the training dataset
+
+```{r}
+#CLEAN AND PREPROCESS TEST DATA
+test_data_2<-test_data[,filter_variables==FALSE]
+test_filter<-test_data_2[,nsv$nzv==FALSE]
+test_filter_2<-test_filter[,-(1:6)]
+testData<-test_filter_2[,-c(4,9,10,8,19,33,46)]
+```
+
+Finally, I apply the best prediction model on the test Dataset.
+
+```{r}
+#APPLY THE PREDICTION MODEL RANDOM FOREST
+pred_final<-predict(mod_rf,newdata=testData)
+pred_final
+```
+
+The results will be applied in the Quiz of the coursera Course : Practical Machine Learning.
